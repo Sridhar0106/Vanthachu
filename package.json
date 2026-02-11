@@ -5,7 +5,8 @@
   "scripts": {
     "start": "expo start",
     "web": "expo start --web",
-    "dev": "npm run dev --prefix web"
+    "dev": "npm run dev --prefix web",
+    "build": "npm install --prefix web && npm run build --prefix web"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
