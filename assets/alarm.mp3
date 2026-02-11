@@ -1,0 +1,4 @@
+// Placeholder for alarm sound
+// In production, replace this with an actual alarm sound file
+// For now, the app will use the system default notification sound
+export default {};
