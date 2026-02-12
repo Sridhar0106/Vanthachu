@@ -516,9 +516,10 @@ const App = () => {
 
                                 {drivingInfo && (
                                     <div className="stat-box">
+                                        <MapPin size={14} style={{ color: '#64748b' }} />
                                         <span className="stat-label">Arrival</span>
                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.1 }}>
-                                            <span className="stat-value" style={{ fontSize: '1.1rem' }}>
+                                            <span className="stat-value" style={{ fontSize: '1.25rem' }}>
                                                 {getArrivalTime(drivingInfo.duration)}
                                             </span>
                                             <span style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '4px', fontWeight: 600 }}>
