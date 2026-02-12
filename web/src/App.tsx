@@ -119,7 +119,7 @@ const App = () => {
                         setRoutePath(coords);
                         setDrivingInfo({
                             distance: route.distance / 1000, // meters to km
-                            duration: route.duration // seconds
+                            duration: route.duration * 1.5 // seconds (1.5x for bus)
                         });
                     }
                 } catch (error) {
@@ -156,10 +156,18 @@ const App = () => {
 
     // Format seconds to human readable string
     const formatDuration = (seconds: number) => {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.round((seconds % 3600) / 60);
+        const totalMinutes = Math.round(seconds / 60);
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
         if (hours === 0) return `~${minutes} min`;
         return `~${hours}h ${minutes}m`;
+    };
+
+    // Calculate Arrival Time
+    const getArrivalTime = (seconds: number) => {
+        const now = new Date();
+        const arrival = new Date(now.getTime() + seconds * 1000);
+        return arrival.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     };
 
     // Calculate ETA based on distance and speed (Fallback)
@@ -502,7 +510,12 @@ const App = () => {
                                     <Clock size={14} />
                                     <span className="stat-label">ETA</span>
                                     <span className="stat-value">
-                                        {drivingInfo ? formatDuration(drivingInfo.duration) : eta}
+                                        {drivingInfo ?
+                                            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                                                <span>{getArrivalTime(drivingInfo.duration)}</span>
+                                                <span style={{ fontSize: '12px', opacity: 0.8 }}>{formatDuration(drivingInfo.duration)}</span>
+                                            </div>
+                                            : eta}
                                     </span>
                                 </div>
                                 <div className="stat-box accent">
