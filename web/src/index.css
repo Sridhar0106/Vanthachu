@@ -534,8 +534,7 @@ body {
     justify-content: flex-start;
     gap: 4px;
     flex: 1;
-    width: 0;
-    min-width: 0;
+    min-width: 80px;
 }
 
 .stat-box.accent {
