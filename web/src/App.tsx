@@ -272,8 +272,9 @@ const App = () => {
                 muted
                 playsInline
                 preload="auto"
+                poster="/bg-landscape.png"
             >
-                <source src="/bg-video-hd.mp4" type="video/mp4" />
+                <source src="/bg-video-optimized.mp4" type="video/mp4" />
             </video>
             <div className="app-overlay" />
 
