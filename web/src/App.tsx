@@ -508,14 +508,9 @@ const App = () => {
                             <div className="trip-stats">
                                 <div className="stat-box">
                                     <Clock size={14} />
-                                    <span className="stat-label">ETA</span>
+                                    <span className="stat-label">Duration</span>
                                     <span className="stat-value">
-                                        {drivingInfo ?
-                                            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
-                                                <span>{getArrivalTime(drivingInfo.duration)}</span>
-                                                <span style={{ fontSize: '12px', opacity: 0.8 }}>{formatDuration(drivingInfo.duration)}</span>
-                                            </div>
-                                            : eta}
+                                        {drivingInfo ? formatDuration(drivingInfo.duration) : eta}
                                     </span>
                                 </div>
                                 <div className="stat-box accent">
@@ -524,6 +519,29 @@ const App = () => {
                                     <span className="stat-value">{speedKmh} km/h</span>
                                 </div>
                             </div>
+
+                            {/* Time Details Below Stats */}
+                            {drivingInfo && (
+                                <div style={{
+                                    marginTop: '12px',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                    padding: '12px 16px',
+                                    borderRadius: '12px',
+                                    fontSize: '13px'
+                                }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                        <span style={{ opacity: 0.7, marginBottom: '2px', fontSize: '11px' }}>NOW</span>
+                                        <strong>{new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</strong>
+                                    </div>
+                                    <div style={{ width: '1px', backgroundColor: 'rgba(255,255,255,0.2)' }}></div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                        <span style={{ opacity: 0.7, marginBottom: '2px', fontSize: '11px' }}>ARRIVAL</span>
+                                        <strong style={{ color: '#4ADE80' }}>{getArrivalTime(drivingInfo.duration)}</strong>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="tracking-content">
