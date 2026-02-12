@@ -101,7 +101,7 @@ const App = () => {
     const [gpsData, setGpsData] = useState<GpsData | null>(null);
     const [eta, setEta] = useState<string>('--');
     const [speedKmh, setSpeedKmh] = useState<number>(0);
-    const [routePath, setRoutePath] = useState<[number, number][]>([]);
+    const [drivingInfo, setDrivingInfo] = useState<{ distance: number; duration: number } | null>(null);
 
     useEffect(() => {
         const fetchRoute = async () => {
@@ -113,16 +113,23 @@ const App = () => {
                     const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${start[0]},${start[1]};${end[0]},${end[1]}?overview=full&geometries=geojson`);
                     const data = await response.json();
                     if (data.routes && data.routes[0]) {
-                        const coords = data.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+                        const route = data.routes[0];
+                        const coords = route.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
                         setRoutePath(coords);
+                        setDrivingInfo({
+                            distance: route.distance / 1000, // meters to km
+                            duration: route.duration // seconds
+                        });
                     }
                 } catch (error) {
                     console.error("Error fetching route:", error);
                     // Fallback to straight line if fetch fails
                     setRoutePath([[start[1], start[0]], [end[1], end[0]]]);
+                    setDrivingInfo(null);
                 }
             } else {
                 setRoutePath([]);
+                setDrivingInfo(null);
             }
         };
 
@@ -146,7 +153,15 @@ const App = () => {
         return R * c;
     }, []);
 
-    // Calculate ETA based on distance and speed
+    // Format seconds to human readable string
+    const formatDuration = (seconds: number) => {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.round((seconds % 3600) / 60);
+        if (hours === 0) return `~${minutes} min`;
+        return `~${hours}h ${minutes}m`;
+    };
+
+    // Calculate ETA based on distance and speed (Fallback)
     const calculateETA = useCallback((distanceKm: number, speedKmh: number) => {
         if (speedKmh < 5) {
             // If speed is very low, estimate based on average bus speed (30 km/h)
@@ -200,7 +215,7 @@ const App = () => {
                         };
                         setGpsData(newGpsData);
 
-                        // Calculate distance
+                        // Calculate straight-line distance for Alarm logic
                         const d = calculateDistance(
                             pos.coords.latitude,
                             pos.coords.longitude,
@@ -213,10 +228,17 @@ const App = () => {
                         const speed = pos.coords.speed !== null ? pos.coords.speed * 3.6 : 0;
                         setSpeedKmh(Math.round(speed));
 
-                        // Calculate ETA
-                        setEta(calculateETA(d, speed));
+                        // Calculate ETA - prefer OSRM duration if available, else usage calculation
+                        if (drivingInfo) {
+                            // If we have recent driving info, use it but adjust for time passed?
+                            // Actually fetchRoute updates every 500ms when gpsData changes, so drivingInfo should be fresh enough.
+                            // But drivingInfo is updated via effect on gpsData change.
+                            // So we just use drivingInfo.duration in render.
+                        } else {
+                            setEta(calculateETA(d, speed));
+                        }
 
-                        // Alarm when close
+                        // Alarm when close (Straight line distance < 1km)
                         if (d <= 1) {
                             console.log('ALARM! Destination nearby');
                             // Could trigger notification/sound here
@@ -231,7 +253,7 @@ const App = () => {
         return () => {
             if (watchId) navigator.geolocation.clearWatch(watchId);
         };
-    }, [isTracking, selectedLocation, customDestination, calculateDistance, calculateETA]);
+    }, [isTracking, selectedLocation, customDestination, calculateDistance, calculateETA]); // drivingInfo is not a dep here to avoid loop
 
     // Handle map click to select custom destination
     const handleMapClick = (lat: number, lng: number) => {
@@ -478,7 +500,9 @@ const App = () => {
                                 <div className="stat-box">
                                     <Clock size={14} />
                                     <span className="stat-label">ETA</span>
-                                    <span className="stat-value">{eta}</span>
+                                    <span className="stat-value">
+                                        {drivingInfo ? formatDuration(drivingInfo.duration) : eta}
+                                    </span>
                                 </div>
                                 <div className="stat-box accent">
                                     <Navigation2 size={14} />
@@ -495,7 +519,10 @@ const App = () => {
                                 </div>
                                 <span className="distance-label">Distance Remaining</span>
                                 <div className="distance-value">
-                                    {distance ? distance.toFixed(1) : '--'} <span>km</span>
+                                    {drivingInfo
+                                        ? drivingInfo.distance.toFixed(1)
+                                        : (distance ? distance.toFixed(1) : '--')
+                                    } <span>km</span>
                                 </div>
                                 <div className="progress-bar">
                                     <div
