@@ -101,6 +101,7 @@ const App = () => {
     const [gpsData, setGpsData] = useState<GpsData | null>(null);
     const [eta, setEta] = useState<string>('--');
     const [speedKmh, setSpeedKmh] = useState<number>(0);
+    const [routePath, setRoutePath] = useState<[number, number][]>([]);
     const [drivingInfo, setDrivingInfo] = useState<{ distance: number; duration: number } | null>(null);
 
     useEffect(() => {
