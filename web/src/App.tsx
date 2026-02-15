@@ -8,7 +8,8 @@ import {
     Clock,
     Navigation2,
     Locate,
-    Target
+    Target,
+    Loader2
 } from 'lucide-react';
 import { locations, Location } from './locations';
 import 'leaflet/dist/leaflet.css';
@@ -81,6 +82,20 @@ function FlyToLocation({ location }: { location: { lat: number; lng: number } | 
     return null;
 }
 
+// Automatically center map on user location when GPS is found
+function UserLocationUpdater({ gpsData }: { gpsData: GpsData | null }) {
+    const map = useMap();
+    const [hasCentered, setHasCentered] = useState(false);
+
+    useEffect(() => {
+        if (gpsData && !hasCentered) {
+            map.flyTo([gpsData.lat, gpsData.lng], 15, { duration: 2 });
+            setHasCentered(true);
+        }
+    }, [gpsData, map, hasCentered]);
+    return null;
+}
+
 // Map click handler for selecting destination by tapping
 function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
     useMapEvents({
@@ -89,6 +104,49 @@ function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number
         },
     });
     return null;
+}
+
+// Button to re-center map on user location and force refresh
+function MapReCenterButton({ gpsData }: { gpsData: GpsData | null }) {
+    const map = useMap();
+    const handleRecenter = () => {
+        if (gpsData) {
+            map.flyTo([gpsData.lat, gpsData.lng], 18, { duration: 1.5 });
+        }
+        // Also try to force a fresh read
+        navigator.geolocation.getCurrentPosition(
+            () => console.log('Refreshed location'),
+            (e) => console.error(e),
+            { maximumAge: 0, enableHighAccuracy: true }
+        );
+    };
+
+    if (!gpsData) return null;
+
+    return (
+        <button
+            onClick={handleRecenter}
+            style={{
+                position: 'absolute',
+                top: '20px',
+                right: '20px',
+                zIndex: 1000,
+                background: 'white',
+                border: 'none',
+                borderRadius: '50%',
+                width: '44px',
+                height: '44px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                cursor: 'pointer'
+            }}
+            title="Locate Me"
+        >
+            <Locate size={20} color="#007AFF" />
+        </button>
+    );
 }
 
 const App = () => {
@@ -185,84 +243,65 @@ const App = () => {
         return `~${Math.floor(hours)}h ${minutes % 60}m`;
     }, []);
 
-    // Get current location on mount
+    // Continuous GPS tracking from start
     useEffect(() => {
+        let watchId: number;
         if ('geolocation' in navigator) {
-            navigator.geolocation.getCurrentPosition(
+            watchId = navigator.geolocation.watchPosition(
                 (pos) => {
-                    setGpsData({
+                    // Filter out stale data (older than 1 minute)
+                    const age = Date.now() - pos.timestamp;
+                    if (age > 60000) {
+                        console.warn('Ignoring stale GPS data, age:', age);
+                        return;
+                    }
+
+                    const newGpsData: GpsData = {
                         lat: pos.coords.latitude,
                         lng: pos.coords.longitude,
                         speed: pos.coords.speed,
                         heading: pos.coords.heading,
                         accuracy: pos.coords.accuracy,
                         timestamp: pos.timestamp
-                    });
+                    };
+                    setGpsData(newGpsData);
                 },
-                (err) => console.error('Initial GPS error:', err),
-                { enableHighAccuracy: true }
+                (err) => console.error('GPS error:', err),
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
             );
         }
-    }, []);
-
-    // Real-time GPS tracking when tracking is active
-    useEffect(() => {
-        let watchId: number;
-        const destination = selectedLocation || customDestination;
-
-        if (isTracking && destination) {
-            if ('geolocation' in navigator) {
-                watchId = navigator.geolocation.watchPosition(
-                    (pos) => {
-                        const newGpsData: GpsData = {
-                            lat: pos.coords.latitude,
-                            lng: pos.coords.longitude,
-                            speed: pos.coords.speed,
-                            heading: pos.coords.heading,
-                            accuracy: pos.coords.accuracy,
-                            timestamp: pos.timestamp
-                        };
-                        setGpsData(newGpsData);
-
-                        // Calculate straight-line distance for Alarm logic
-                        const d = calculateDistance(
-                            pos.coords.latitude,
-                            pos.coords.longitude,
-                            destination.lat,
-                            destination.lng
-                        );
-                        setDistance(d);
-
-                        // Calculate speed in km/h
-                        const speed = pos.coords.speed !== null ? pos.coords.speed * 3.6 : 0;
-                        setSpeedKmh(Math.round(speed));
-
-                        // Calculate ETA - prefer OSRM duration if available, else usage calculation
-                        if (drivingInfo) {
-                            // If we have recent driving info, use it but adjust for time passed?
-                            // Actually fetchRoute updates every 500ms when gpsData changes, so drivingInfo should be fresh enough.
-                            // But drivingInfo is updated via effect on gpsData change.
-                            // So we just use drivingInfo.duration in render.
-                        } else {
-                            setEta(calculateETA(d, speed));
-                        }
-
-                        // Alarm when close (Straight line distance < 1km)
-                        if (d <= 1) {
-                            console.log('ALARM! Destination nearby');
-                            // Could trigger notification/sound here
-                        }
-                    },
-                    (err) => console.error('GPS tracking error:', err),
-                    { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
-                );
-            }
-        }
-
         return () => {
             if (watchId) navigator.geolocation.clearWatch(watchId);
         };
-    }, [isTracking, selectedLocation, customDestination, calculateDistance, calculateETA]); // drivingInfo is not a dep here to avoid loop
+    }, []);
+
+    // Tracking logic (distance, alarm, eta)
+    useEffect(() => {
+        const destination = selectedLocation || customDestination;
+        if (isTracking && destination && gpsData) {
+            // Calculate straight-line distance
+            const d = calculateDistance(
+                gpsData.lat,
+                gpsData.lng,
+                destination.lat,
+                destination.lng
+            );
+            setDistance(d);
+
+            // Calculate speed in km/h
+            const speed = gpsData.speed !== null ? gpsData.speed * 3.6 : 0;
+            setSpeedKmh(Math.round(speed));
+
+            if (!drivingInfo) {
+                setEta(calculateETA(d, speed));
+            }
+
+            // Alarm when close
+            if (d <= 1) {
+                console.log('ALARM! Destination nearby');
+            }
+        }
+    }, [isTracking, gpsData, selectedLocation, customDestination, calculateDistance, calculateETA, drivingInfo]);
 
     // Handle map click to select custom destination
     const handleMapClick = (lat: number, lng: number) => {
@@ -435,63 +474,88 @@ const App = () => {
                             )}
                         </div>
                         <div className="picker-map">
-                            <MapContainer
-                                center={gpsData ? [gpsData.lat, gpsData.lng] : [11.1271, 78.6569]}
-                                zoom={gpsData ? 10 : 7}
-                                style={{ height: '100%', width: '100%' }}
-                            >
-                                <TileLayer
-                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                />
-                                <MapClickHandler onMapClick={handleMapClick} />
-                                <FlyToLocation location={selectedLocation || customDestination} />
-
-                                {/* Current location marker */}
-                                {gpsData && (
-                                    <Marker position={[gpsData.lat, gpsData.lng]} icon={currentLocationIcon}>
-                                        <Popup>
-                                            <strong>📍 Your Location</strong><br />
-                                            Accuracy: {Math.round(gpsData.accuracy)}m
-                                        </Popup>
-                                    </Marker>
-                                )}
-
-                                {/* Route line from current location to destination */}
-                                {gpsData && (selectedLocation || customDestination) && routePath.length > 0 && (
-                                    <Polyline
-                                        positions={routePath}
-                                        color="#007AFF"
-                                        weight={4}
-                                        opacity={0.7}
-                                        dashArray="10, 10"
+                            {!gpsData ? (
+                                <div style={{
+                                    height: '100%',
+                                    width: '100%',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    background: '#f1f5f9',
+                                    color: '#64748b'
+                                }}>
+                                    <Loader2 className="animate-spin" size={48} style={{ animation: 'spin 1s linear infinite' }} />
+                                    <p style={{ marginTop: '16px', fontWeight: 600, fontSize: '1.1rem' }}>Locating you...</p>
+                                    <p style={{ fontSize: '0.85rem', marginTop: '4px' }}>Please enable GPS access</p>
+                                    <style>{`
+                                        @keyframes spin {
+                                            from { transform: rotate(0deg); }
+                                            to { transform: rotate(360deg); }
+                                        }
+                                    `}</style>
+                                </div>
+                            ) : (
+                                <MapContainer
+                                    center={[gpsData.lat, gpsData.lng]}
+                                    zoom={15}
+                                    style={{ height: '100%', width: '100%' }}
+                                >
+                                    <TileLayer
+                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                     />
-                                )}
+                                    <MapClickHandler onMapClick={handleMapClick} />
+                                    <FlyToLocation location={selectedLocation || customDestination} />
+                                    <UserLocationUpdater gpsData={gpsData} />
+                                    <MapReCenterButton gpsData={gpsData} />
 
-                                {/* Custom destination marker */}
-                                {customDestination && (
-                                    <Marker position={[customDestination.lat, customDestination.lng]} icon={destinationIcon}>
-                                        <Popup>
-                                            <strong>🎯 Selected Destination</strong><br />
-                                            {customDestination.lat.toFixed(4)}, {customDestination.lng.toFixed(4)}
-                                        </Popup>
-                                    </Marker>
-                                )}
+                                    {/* Current location marker */}
+                                    {gpsData && (
+                                        <Marker position={[gpsData.lat, gpsData.lng]} icon={currentLocationIcon}>
+                                            <Popup>
+                                                <strong>📍 Your Location</strong><br />
+                                                Accuracy: {Math.round(gpsData.accuracy)}m
+                                            </Popup>
+                                        </Marker>
+                                    )}
 
-                                {/* Location markers from list */}
-                                {filteredLocations.slice(0, 30).map((loc, i) => (
-                                    <Marker
-                                        key={i}
-                                        position={[loc.lat, loc.lng]}
-                                        eventHandlers={{ click: () => handleListSelect(loc) }}
-                                    >
-                                        <Popup>
-                                            <strong>{loc.tamil}</strong><br />
-                                            {loc.name}
-                                        </Popup>
-                                    </Marker>
-                                ))}
-                            </MapContainer>
+                                    {/* Route line from current location to destination */}
+                                    {gpsData && (selectedLocation || customDestination) && routePath.length > 0 && (
+                                        <Polyline
+                                            positions={routePath}
+                                            color="#007AFF"
+                                            weight={4}
+                                            opacity={0.7}
+                                            dashArray="10, 10"
+                                        />
+                                    )}
+
+                                    {/* Custom destination marker */}
+                                    {customDestination && (
+                                        <Marker position={[customDestination.lat, customDestination.lng]} icon={destinationIcon}>
+                                            <Popup>
+                                                <strong>🎯 Selected Destination</strong><br />
+                                                {customDestination.lat.toFixed(4)}, {customDestination.lng.toFixed(4)}
+                                            </Popup>
+                                        </Marker>
+                                    )}
+
+                                    {/* Location markers from list */}
+                                    {filteredLocations.slice(0, 30).map((loc, i) => (
+                                        <Marker
+                                            key={i}
+                                            position={[loc.lat, loc.lng]}
+                                            eventHandlers={{ click: () => handleListSelect(loc) }}
+                                        >
+                                            <Popup>
+                                                <strong>{loc.tamil}</strong><br />
+                                                {loc.name}
+                                            </Popup>
+                                        </Marker>
+                                    ))}
+                                </MapContainer>
+                            )}
                         </div>
                     </div>
                 )}
@@ -516,16 +580,16 @@ const App = () => {
 
                                 {drivingInfo && (
                                     <div className="stat-box">
-                                        <MapPin size={14} style={{ color: '#64748b' }} />
-                                        <span className="stat-label">Arrival</span>
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.1 }}>
-                                            <span className="stat-value" style={{ fontSize: '1.25rem' }}>
-                                                {getArrivalTime(drivingInfo.duration)}
-                                            </span>
-                                            <span style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '4px', fontWeight: 600 }}>
-                                                NOW: {new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                                            </span>
+                                        <span style={{ fontSize: '0.75rem', color: '#0f172a', marginBottom: '2px', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                                            NOW: {new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                        </span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', margin: '2px 0' }}>
+                                            <MapPin size={12} style={{ color: '#64748b' }} />
+                                            <span className="stat-label">ARRIVAL</span>
                                         </div>
+                                        <span className="stat-value">
+                                            {getArrivalTime(drivingInfo.duration)}
+                                        </span>
                                     </div>
                                 )}
 
