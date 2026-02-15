@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline } from 'react-leaflet';
 import {
     Navigation,
@@ -161,6 +161,28 @@ const App = () => {
     const [speedKmh, setSpeedKmh] = useState<number>(0);
     const [routePath, setRoutePath] = useState<[number, number][]>([]);
     const [drivingInfo, setDrivingInfo] = useState<{ distance: number; duration: number } | null>(null);
+    const [isAlarmPlaying, setIsAlarmPlaying] = useState(false);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    // Initialize audio
+    useEffect(() => {
+        audioRef.current = new Audio('/alarm.wav');
+        audioRef.current.loop = true;
+        return () => {
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.currentTime = 0;
+            }
+        };
+    }, []);
+
+    const stopAlarm = () => {
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+        }
+        setIsAlarmPlaying(false);
+    };
 
     useEffect(() => {
         const fetchRoute = async () => {
@@ -299,9 +321,13 @@ const App = () => {
             // Alarm when close
             if (d <= 1) {
                 console.log('ALARM! Destination nearby');
+                if (!isAlarmPlaying && audioRef.current) {
+                    audioRef.current.play().catch(e => console.error("Audio play failed", e));
+                    setIsAlarmPlaying(true);
+                }
             }
         }
-    }, [isTracking, gpsData, selectedLocation, customDestination, calculateDistance, calculateETA, drivingInfo]);
+    }, [isTracking, gpsData, selectedLocation, customDestination, calculateDistance, calculateETA, drivingInfo, isAlarmPlaying]);
 
     // Handle map click to select custom destination
     const handleMapClick = (lat: number, lng: number) => {
@@ -676,8 +702,50 @@ const App = () => {
                                 Stop Tracking
                             </button>
                         </div>
+
+                        {/* Alarm Overlay */}
+                        {isAlarmPlaying && (
+                            <div style={{
+                                position: 'fixed',
+                                bottom: '90px',
+                                left: '50%',
+                                transform: 'translateX(-50%)',
+                                zIndex: 2000,
+                                width: '90%',
+                                maxWidth: '400px'
+                            }}>
+                                <button
+                                    onClick={stopAlarm}
+                                    style={{
+                                        width: '100%',
+                                        padding: '16px',
+                                        background: '#ef4444',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '12px',
+                                        fontSize: '1.2rem',
+                                        fontWeight: 'bold',
+                                        boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px',
+                                        animation: 'pulse 1s infinite'
+                                    }}
+                                >
+                                    <Clock className="animate-bounce" />
+                                    STOP ALARM
+                                </button>
+                                <style>{`
+                                    @keyframes pulse {
+                                        0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+                                        70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+                                        100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+                                    }
+                                `}</style>
+                            </div>
+                        )}
                     </div>
-                )}
             </main>
         </div>
     );
